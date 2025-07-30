@@ -1,3 +1,12 @@
+import streamlit as st
+
+# Sayfa başlığı ve favicon değiştir
+st.set_page_config(
+    page_title="Radiologean - BI-RADS App",
+    page_icon="🩻",
+    layout="wide"
+)
+
 import sys
 import os
 import streamlit as st
