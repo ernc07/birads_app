@@ -462,6 +462,6 @@ st.markdown("""
 <hr>
 <p style='text-align:center; color:gray; font-size:14px;'>
 🩻 Developed by <b>ERNC</b> | Antalya Eğitim ve Araştırma Hastanesi, 2025<br>
-<small>Assistant Radiologist: Erdinç Hakan İnan</small>
+<small>Assistant Radiologists: Erdinç Hakan İnan & Heves Yaren Karakaş</small>
 </p>
 """, unsafe_allow_html=True)
