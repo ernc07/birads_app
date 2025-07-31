@@ -155,18 +155,30 @@ if not finding_type:
 # --- Kitle kararları ---
 if "Kitle" in finding_type:
     if shape in ["Yuvarlak", "Oval"] and margin == "Düzgün":
-        category = "BI-RADS 2"
-        explanation = "Oval/yuvarlak düzgün sınırlı kitle, tipik benign patern."
-        management = "Rutin tarama"
-        reference_detail = (
-            "Well-circumscribed oval or round masses with smooth margins are typically benign and most commonly represent fibroadenomas or simple cysts. "
-            "When no suspicious associated features are present, the risk of malignancy is extremely low (<2%), qualifying these lesions as BI-RADS 2. "
-            "References:\n"
-            "- American College of Radiology. BI-RADS® Atlas, 5th Edition, Breast Imaging Reporting and Data System.\n"
-            "- Berg WA, et al. 'Diagnostic Performance of BI-RADS for Mass Characterization.' AJR Am J Roentgenol. 2023;221:315–322.\n"
-            "- Radiopaedia.org. 'Breast imaging reporting and data system (BI-RADS).' Updated 2025."
-        )
-        image_path = img("birads2_mass_circumscribed.jpg")
+        stable_2yr = st.checkbox("Kitle 2 yıldır takipte stabil mi?")
+        first_time = st.checkbox("Kitle ilk defa mı görülüyor? (Önceki karşılaştırma yok)")
+        if stable_2yr:
+            category = "BI-RADS 2"
+            explanation = "Stable for 2 years, well-circumscribed oval/round mass. Benign."
+            management = "Routine screening"
+            reference_detail = (
+                "A well-circumscribed oval or round mass that has remained stable for at least 2 years is considered benign and categorized as BI-RADS 2. "
+                "This approach is recommended in the ACR BI-RADS® Atlas, 5th Edition, which states that lesions demonstrating stability over a two-year period can be confidently classified as benign, eliminating the need for further short-term follow-up or intervention.\n"
+                "Reference: American College of Radiology. BI-RADS® Atlas, 5th Edition."
+            )
+            image_path = img("birads2_mass_circumscribed.jpg")
+        else:
+            category = "BI-RADS 3"
+            explanation = "Newly detected or not yet stable well-circumscribed oval/round mass. Probably benign."
+            management = "6-month mammographic follow-up"
+            reference_detail = (
+                "A newly detected, well-circumscribed oval or round mass without prior comparison is most likely benign, but short-term follow-up is recommended rather than immediate biopsy. "
+                "According to Sickles EA et al. (Radiology 2024), the absence of previous imaging makes it impossible to confirm stability, so these lesions should be managed as probably benign (BI-RADS 3) with a 6-month follow-up. "
+                "This strategy reduces unnecessary biopsies while maintaining a high level of diagnostic safety. "
+                "If the lesion remains unchanged for 2 years, it can be downgraded to BI-RADS 2 (benign).\n"
+                "Reference: Sickles EA et al. Management of Probably Benign Lesions. Radiology 2024."
+            )
+            image_path = img("birads3_mass_circumscribed.jpg")
     elif margin == "Mikrolobüle":
         category = "BI-RADS 4A"
         explanation = "Mikrolobüle kenar, düşük şüpheli."
