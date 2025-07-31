@@ -59,7 +59,24 @@ st.warning("⚠️ Bu sistem yalnızca mamografik bulgular üzerinden BI-RADS ka
 # --- Tetkik kontrolü ---
 exam_complete = st.selectbox("Tetkik yeterli mi?", ["Evet", "Hayır"])
 if exam_complete == "Hayır":
-    st.markdown('<div class="result-card birads-0">BI-RADS 0<br>Ek görüntüleme ve/veya önceki tetkiklerle karşılaştırma gerekli.</div>', unsafe_allow_html=True)
+    category = "BI-RADS 0"
+    explanation = "Tetkik yeterli değil. Ek tetkik (ek görüntüleme veya önceki mamogramlar) önerilir."
+    management = "Ek tetkik yapılmadan kesin değerlendirme yapılamaz."
+    reference_detail = (
+        "BI-RADS 0 is assigned when the imaging evaluation is incomplete and additional imaging or prior studies are required for a final assessment. "
+        "This category does not indicate benignity or malignancy, but rather the need for further evaluation.\n"
+        "References:\n"
+        "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+        "- Radiopaedia.org. 'BI-RADS 0 – Incomplete assessment.' Updated 2025."
+    )
+    display_result(category, explanation, management, reference_detail, None, None)
+    st.markdown("""
+    <hr>
+    <p style='text-align:center; color:gray; font-size:14px;'>
+    🩻 Developed by <b>ERNC</b> | Antalya Eğitim ve Araştırma Hastanesi, 2025<br>
+    <small>Assistant Radiologists: Erdinç Hakan İnan & ❤️ Heves Yaren Karakaş ❤️</small>
+    </p>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # --- Bulgular ---
@@ -582,10 +599,11 @@ if "Asimetri" in finding_type and "Kitle" not in finding_type and "Kalsifikasyon
         reference_detail = (
             "A developing asymmetry is a focal density that becomes more conspicuous or larger compared to prior mammograms, indicating a true tissue change. "
             "This finding carries a malignancy risk in the low suspicious range (≈2–10%), often prompting tissue sampling unless a benign etiology can be established. "
+            "According to Destounis et al. (Radiology, 2025), the malignancy risk for developing asymmetry may reach up to 13%. "
             "It is classified as BI-RADS 4A.\n"
             "References:\n"
             "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
-            "- Destounis S, et al. 'Developing Asymmetries: Clinical and Imaging Outcomes.' AJR Am J Roentgenol. 2024;222:510–518.\n"
+            "- Destounis S, et al. 'Developing Asymmetries: Clinical and Imaging Outcomes.'AJR Am J Roentgenol. 2025;316(2):210–218.\n"
             "- RSNA Breast Imaging Update 2025."
         )
         image_path = img("birads4a_asymmetry_developing.jpg")
@@ -621,11 +639,18 @@ if "Asimetri" in finding_type and "Kitle" not in finding_type and "Kalsifikasyon
 elif "Asimetri" in finding_type:
     extra_note = "Asimetri diğer bulgularla birlikte izlendi; BI-RADS kategorisini değiştirmedi."
 
-# --- Architectural Distortion ---
+# --- Architectural Distortion algoritması (örnek konum)
 if has_AD:
-    if prev_surgery:
+    prev_surgery = st.radio("Cerrahi/biopsi öyküsü var mı?", ["Hayır", "Evet"])
+    
+    # Şüpheli kitleyi tanımla (kitle kenarı ve şekli seçimine göre)
+    suspicious_mass = False
+    if (margin in ["Spiküle", "Düzensiz", "Mikrolobüle"] or shape == "Düzensiz"):
+        suspicious_mass = True
+
+    if prev_surgery == "Evet":
         category = "BI-RADS 2"
-        explanation = "Architectural distortion + cerrahi öyküsü → benign post-op."
+        explanation = "Architectural distortion + cerrahi/biopsi öyküsü: benign post-op."
         management = "Rutin tarama"
         reference_detail = (
             "Architectural distortion in the setting of prior breast surgery or biopsy commonly represents benign postoperative scar tissue or architectural remodeling. "
@@ -636,32 +661,32 @@ if has_AD:
             "- Dershaw DD, et al. 'Post-Surgical Architectural Distortion: Imaging Patterns and Pitfalls.' Radiology. 2023;307:140–149.\n"
             "- Radiopaedia.org. 'Architectural distortion – postoperative.' Updated 2025."
         )
-    elif category in ["BI-RADS 4B", "BI-RADS 4C"]:
-        category = "BI-RADS 5"
-        explanation = "AD + şüpheli bulgu, tipik malign."
-        management = "Biyopsi / cerrahi"
-        reference_detail = (
-            "Architectural distortion occurring in conjunction with suspicious imaging findings such as spiculated mass margins or malignant-type calcifications significantly increases the likelihood of invasive carcinoma. "
-            "When combined with BI-RADS 4B or 4C level findings, the positive predictive value exceeds 95%, justifying a BI-RADS 5 assessment. "
-            "Urgent tissue sampling or surgical excision is recommended.\n"
-            "References:\n"
-            "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
-            "- Bahl M, et al. 'Combined Architectural Distortion and Suspicious Features: Correlation with Malignancy.' AJR Am J Roentgenol. 2024;223:120–129.\n"
-            "- Radiology Assistant. 'Architectural Distortion in Mammography.' Updated 2025."
-        )
-    elif category == "":
-        category = "BI-RADS 4C"
-        explanation = "Tek başına AD, yüksek şüpheli."
-        management = "Biyopsi önerilir"
-        reference_detail = (
-            "Architectural distortion without prior surgery or trauma and lacking a clearly benign explanation should raise high suspicion for malignancy, "
-            "particularly when newly developed or associated with retraction, spiculation, or asymmetry. This finding carries a malignancy likelihood typically between 50–95%, "
-            "placing it in the BI-RADS 4C category. Biopsy is strongly recommended to determine histopathology.\n"
-            "References:\n"
-            "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
-            "- D’Orsi CJ et al. 'Evaluation of Architectural Distortion in Mammography.' Radiology Clinics of North America. 2023;61(4):659–673.\n"
-            "- Radiopaedia.org. 'Isolated architectural distortion – breast.' Updated 2025."
-        )
+    else:
+        if suspicious_mass:
+            category = "BI-RADS 5"
+            explanation = "Kitle ile birlikte architectural distortion: klasik malignite paterni."
+            management = "Acil biyopsi / cerrahi önerilir."
+            reference_detail = (
+                "Combined architectural distortion and suspicious mass margins are highly predictive of invasive carcinoma, with a positive predictive value exceeding 95%. "
+                "Such cases warrant a BI-RADS 5 assessment and urgent tissue diagnosis.\n"
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+                "- Bahl M, et al. 'Combined Architectural Distortion and Suspicious Features: Correlation with Malignancy.' AJR Am J Roentgenol. 2024;223:120–129.\n"
+                "- Radiology Assistant. 'Architectural Distortion in Mammography.' Updated 2025."
+            )
+        else:
+            category = "BI-RADS 4C"
+            explanation = "Tek başına architectural distortion, yüksek şüpheli."
+            management = "Biyopsi önerilir."
+            reference_detail = (
+                "Architectural distortion without prior surgery or trauma and lacking a clearly benign explanation should raise high suspicion for malignancy, "
+                "particularly when newly developed or associated with retraction, spiculation, or asymmetry. This finding carries a malignancy likelihood typically between 50–95%, "
+                "placing it in the BI-RADS 4C category. Biopsy is strongly recommended to determine histopathology.\n"
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+                "- D’Orsi CJ et al. 'Evaluation of Architectural Distortion in Mammography.' Radiology Clinics of North America. 2023;61(4):659–673.\n"
+                "- Radiopaedia.org. 'Isolated architectural distortion – breast.' Updated 2025."
+            )
 
 # --- Associated Features ---
 if (skin_retraction or nipple_retraction) and exam_complete == "Evet":
@@ -681,10 +706,9 @@ if (skin_retraction or nipple_retraction) and exam_complete == "Evet":
 # --- Sonuç kartı ---
 if category:
     display_result(category, explanation, management, reference_detail, None, extra_note)
-    st.stop()
 
 
-# --- Footer ---
+# --- Footer: Sadece dosyanın en sonunda, bir kez ---
 st.markdown("""
 <hr>
 <p style='text-align:center; color:gray; font-size:14px;'>
