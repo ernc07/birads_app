@@ -1,4 +1,6 @@
 import streamlit as st
+import sys
+import os
 
 # Sayfa başlığı ve favicon değiştir
 st.set_page_config(
@@ -7,39 +9,19 @@ st.set_page_config(
     layout="wide"
 )
 
-import sys
-import os
-import streamlit as st
-
 def display_result(category, explanation, management, reference_detail, image_path=None, extra_note=None):
-    """
-    Displays the BI-RADS classification result card and supporting information in the Streamlit app.
-
-    Args:
-        category (str): BI-RADS category (e.g., 'BI-RADS 2').
-        explanation (str): Short explanation of the decision.
-        management (str): Recommended management action.
-        reference_detail (str): Detailed reference text with citations.
-        image_path (str, optional): Path to the example image for the finding.
-        extra_note (str, optional): Any extra note or clarification to display.
-    """
     css_class = "birads-" + category.split()[1].lower()
     st.markdown(
         f'<div class="result-card {css_class}">{category}<br>{explanation}<br><small>{management}</small></div>',
         unsafe_allow_html=True
     )
-
     if extra_note:
         st.info(extra_note)
-
     if image_path and os.path.exists(image_path):
         st.image(image_path, caption=f"{category} örnek mamografi", use_container_width=True)
-
     if reference_detail:
         st.info(f"📖 {reference_detail}")
 
-
-# --- Base directory (PyInstaller uyumlu) ---
 if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
 else:
@@ -83,18 +65,222 @@ if exam_complete == "Hayır":
 # --- Bulgular ---
 finding_type = st.multiselect("Bulgu Tipi", ["Kitle", "Kalsifikasyon", "Architectural Distortion", "Asimetri"])
 
-# --- Önceki cerrahi/biopsi öyküsü ---
-prev_surgery = st.checkbox("Önceki cerrahi / biyopsi öyküsü mevcut mu?")
-biopsy_proven = st.checkbox("Biyopsi ile malignite doğrulandı mı? (BI-RADS 6)")
+# --- Kombine bulgu algoritması EN ÜSTE ---
+if "Kitle" in finding_type and "Kalsifikasyon" in finding_type:
+    st.session_state['combined_done'] = True
+    # Kitle skoru ve tipi
+    shape = st.selectbox("Lezyon Şekli", ["Yuvarlak", "Oval", "Düzensiz"])
+    if shape in ["Yuvarlak", "Oval"]:
+        margin = st.selectbox("Kenar Özelliği", ["Düzgün", "Mikrolobüle"])
+    else:
+        margin = st.selectbox("Kenar Özelliği", ["Mikrolobüle", "Düzensiz", "Spiküle"])
+    stable_2yr_combined = st.checkbox("Kitle 2 yıldır takipte stabil mi?", key="stable_2yr_combined")
+    if shape in ["Yuvarlak", "Oval"] and margin == "Düzgün":
+        kit_score = 2 if stable_2yr_combined else 3
+        kit_type = ""
+    elif margin == "Mikrolobüle":
+        kit_score = 4
+        kit_type = "4A"
+    elif margin == "Düzensiz":
+        kit_score = 4
+        kit_type = "4B"
+    elif margin == "Spiküle":
+        kit_score = 4
+        kit_type = "4C"
+    else:
+        kit_score = 0
+        kit_type = ""
 
-# --- BI-RADS 6 override ---
-if biopsy_proven:
-    category = "BI-RADS 6"
-    explanation = "Biyopsi ile doğrulanmış malignite."
-    management = "Tedavi planlaması"
-    reference_detail = "Known biopsy-proven malignancy is categorized as BI-RADS 6 regardless of imaging findings. (ACR BI-RADS 5th Ed.)"
-    st.markdown(f'<div class="result-card birads-6">{category}<br>{explanation}</div>', unsafe_allow_html=True)
-    st.info(f"📖 {reference_detail}")
+    benign_morphs = ["Coarse/Popcorn", "Eggshell/Rim", "Milk of Calcium", "Skin", "Vascular"]
+    calc_morph = st.selectbox(
+        "Kalsifikasyon Morfolojisi",
+        ["Amorf", "Pleomorfik", "Lineer/Dallanan", "Round/Punctate"] + benign_morphs
+    )
+    if calc_morph in benign_morphs:
+        calc_dist = None
+    elif calc_morph == "Lineer/Dallanan":
+        calc_dist = st.selectbox("Kalsifikasyon Dağılımı", ["Segmental", "Lineer"])
+    else:
+        calc_dist = st.selectbox("Kalsifikasyon Dağılımı", ["Gruplu", "Segmental", "Lineer", "Diffüz"])
+
+    if calc_morph in benign_morphs:
+        kal_score = 2
+        kal_type = ""
+    elif calc_morph == "Round/Punctate":
+        kal_score = 2 if calc_dist == "Diffüz" else 3
+        kal_type = ""
+    elif calc_morph == "Amorf":
+        if calc_dist in ["Segmental", "Lineer"]:
+            kal_score = 4
+            kal_type = "4B"
+        else:
+            kal_score = 4
+            kal_type = "4A"
+    elif calc_morph == "Pleomorfik":
+        if calc_dist in ["Segmental", "Lineer"]:
+            kal_score = 4
+            kal_type = "4C"
+        else:
+            kal_score = 4
+            kal_type = "4B"
+    elif calc_morph == "Lineer/Dallanan":
+        kal_score = 4
+        kal_type = "4C"
+    else:
+        kal_score = 0
+        kal_type = ""
+
+    # Kitle açıklama ve referansları
+    if kit_score == 2:
+        kit_expl = "2 yıldır stabil, oval/yuvarlak düzgün sınırlı kitle. Benign."
+        kit_ref = "A well-circumscribed oval or round mass that has remained stable for at least 2 years is considered benign and categorized as BI-RADS 2. Reference: American College of Radiology. BI-RADS® Atlas, 5th Edition."
+    elif kit_score == 3:
+        kit_expl = "İlk defa görülen veya stabil olmayan düzgün sınırlı oval/yuvarlak kitle. Muhtemelen benign."
+        kit_ref = "A newly detected, well-circumscribed oval or round mass without prior comparison is most likely benign, but short-term follow-up is recommended (BI-RADS 3). Reference: ACR BI-RADS® Atlas, 5th Edition."
+    elif kit_score == 4 and kit_type == "4A":
+        kit_expl = "Mikrolobüle kenar, düşük şüpheli. Stabilite malignite riskini azaltmaz."
+        kit_ref = (
+            "Microlobulated margins are associated with a low but non-negligible risk of malignancy, generally in the BI-RADS 4A category (≈2–10% risk). "
+            "Even if the lesion is stable for 2 years, suspicious margins are not downgraded to benign. "
+            "References:\n"
+            "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+            "- Radiopaedia.org. 'Breast mass margins.' Updated 2025.\n"
+            "- Stavros AT, et al. 'Solid Breast Nodules: Use of Sonography to Distinguish between Benign and Malignant Lesions.' Radiology. 2024."
+        )
+    elif kit_score == 4 and kit_type == "4B":
+        kit_expl = "Düzensiz kenar, orta şüpheli. Stabilite malignite riskini azaltmaz."
+        kit_ref = (
+            "Irregular mass margins are associated with an intermediate probability of malignancy and are classified as BI-RADS 4B (≈10–50% risk). "
+            "Stability over time does not exclude malignancy for suspicious margins. "
+            "References:\n"
+            "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+            "- Sickles EA, et al. 'Breast Imaging Reporting and Data System: ACR BI-RADS.' RSNA Breast Imaging Update 2024.\n"
+            "- Radiopaedia.org. 'Breast mass margins.' Updated 2025."
+        )
+    elif kit_score == 4 and kit_type == "4C":
+        kit_expl = "Spiküle kenar, yüksek şüpheli. Stabilite malignite riskini azaltmaz."
+        kit_ref = (
+            "Spiculated margins are highly predictive of invasive malignancy with a positive predictive value exceeding 90%. "
+            "Even if the lesion is stable for 2 years, spiculated margins remain highly suspicious and are not downgraded. "
+            "References:\n"
+            "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+            "- Harvey JA, et al. 'Predictive Value of Spiculated Margins in Mammographic Masses.' AJR Am J Roentgenol. 2024;222:455–462.\n"
+            "- Radiology Assistant. 'BI-RADS for Mammography.' Updated 2025."
+        )
+
+    # Kalsifikasyon açıklama ve referansları
+    if kal_score == 2:
+        kal_expl = f"{calc_morph} kalsifikasyon, tipik benign."
+        kal_ref = f"{calc_morph} type calcifications are considered classic benign patterns and are typically associated with fat necrosis, calcified fibroadenomas, dermal deposits, or vascular walls. Reference: ACR BI-RADS® Atlas, 5th Edition."
+    elif kal_score == 3:
+        kal_expl = "Gruplu round/punctate kalsifikasyon, muhtemelen benign."
+        kal_ref = "Grouped round or punctate calcifications are most often benign but carry a slightly higher malignancy risk compared to diffuse patterns, warranting short-term follow-up. Reference: ACR BI-RADS® Atlas, 5th Edition."
+    elif kal_score == 4 and kal_type == "4A":
+        kal_expl = "Amorf kalsifikasyon, düşük şüpheli."
+        kal_ref = "Amorphous calcifications lacking a distinct shape are considered suspicious because they are associated with both benign fibrocystic change and low-grade DCIS. Reference: ACR BI-RADS® Atlas, 5th Edition."
+    elif kal_score == 4 and kal_type == "4B":
+        kal_expl = "Amorf + segmental/lineer dağılım, orta şüpheli."
+        kal_ref = "Amorphous calcifications arranged in a segmental or linear distribution raise the concern for ductal involvement and are associated with an intermediate malignancy risk (≈10–50%). Reference: ACR BI-RADS® Atlas, 5th Edition."
+    elif kal_score == 4 and kal_type == "4C":
+        kal_expl = "Pleomorfik/lineer/dallanan kalsifikasyon, yüksek şüpheli."
+        kal_ref = "Pleomorphic or linear/branching calcifications arranged in a segmental or linear fashion are strongly associated with DCIS and occasionally invasive cancer. Reference: ACR BI-RADS® Atlas, 5th Edition."
+
+    # En yüksek skoru ve tipini seç
+    def birads_type_priority(t):
+        # 4C > 4B > 4A > "" (boş tip)
+        if t == "4C":
+            return 3
+        elif t == "4B":
+            return 2
+        elif t == "4A":
+            return 1
+        else:
+            return 0
+
+    if kit_score > kal_score:
+        max_score = kit_score
+        max_type = kit_type
+        chosen_expl = kit_expl
+        chosen_ref = kit_ref
+        other_expl = kal_expl
+        other_ref = kal_ref
+        chosen_label = "Mass (Kitle)"
+        other_label = "Calcification (Kalsifikasyon)"
+    elif kal_score > kit_score:
+        max_score = kal_score
+        max_type = kal_type
+        chosen_expl = kal_expl
+        chosen_ref = kal_ref
+        other_expl = kit_expl
+        other_ref = kit_ref
+        chosen_label = "Calcification (Kalsifikasyon)"
+        other_label = "Mass (Kitle)"
+    else:
+        # Skorlar eşitse, tip önceliğine bak!
+        if birads_type_priority(kit_type) >= birads_type_priority(kal_type):
+            max_score = kit_score
+            max_type = kit_type
+            chosen_expl = kit_expl
+            chosen_ref = kit_ref
+            other_expl = kal_expl
+            other_ref = kal_ref
+            chosen_label = "Mass (Kitle)"
+            other_label = "Calcification (Kalsifikasyon)"
+        else:
+            max_score = kal_score
+            max_type = kal_type
+            chosen_expl = kal_expl
+            chosen_ref = kal_ref
+            other_expl = kit_expl
+            other_ref = kit_ref
+            chosen_label = "Calcification (Kalsifikasyon)"
+            other_label = "Mass (Kitle)"
+
+    # Sonucu göster
+    category = f"BI-RADS {max_type}" if max_score == 4 else f"BI-RADS {max_score}"
+    explanation = f"{chosen_expl}\n\n{other_expl}"
+    management = "Biyopsi önerilir" if max_score == 4 else ("6 ay mamografi kontrolü" if max_score == 3 else "Rutin tarama")
+
+    # Açıklama detayları
+    if chosen_label == "Mass (Kitle)":
+        explanation_detail = f"Mass explanation: {chosen_ref}\n\nCalcification explanation: {other_ref}"
+    else:
+        explanation_detail = f"Calcification explanation: {chosen_ref}\n\nMass explanation: {other_ref}"
+
+    # Referans metni (en altta olacak)
+    ref_text = (
+        "Why is the highest BI-RADS category selected?\n"
+        "When multiple findings are present, the final BI-RADS assessment must reflect the most suspicious feature, regardless of the presence of benign findings. "
+        "This approach prevents underestimation of cancer risk and ensures appropriate management. "
+        "For example, if a spiculated mass (BI-RADS 4C) is present alongside amorphous grouped calcifications (BI-RADS 4A), the final category is BI-RADS 4C, as spiculated margins are highly predictive of invasive malignancy. "
+        "Similarly, benign calcifications do not downgrade the assessment if a suspicious mass margin is present.\n\n"
+        "References:\n"
+        "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+        "- Sickles EA, et al. 'Management of Multiple Mammographic Findings: Highest Suspicion Principle.' Radiology. 2024;310:112–120.\n"
+        "- Radiopaedia.org. 'BI-RADS assessment with multiple findings.' Updated 2025."
+    )
+
+    # Sonuç kartı ve açıklamalar
+    display_result(category, explanation, management, ref_text)
+    st.info(f"{explanation_detail}")
+
+    # Referanslar en altta, footer'ın hemen üstünde!
+    
+    st.markdown("""
+    <hr>
+    <p style='text-align:center; color:gray; font-size:14px;'>
+    🩻 Developed by <b>ERNC</b> | Antalya Eğitim ve Araştırma Hastanesi, 2025<br>
+    <small>Assistant Radiologists: Erdinç Hakan İnan & Heves Yaren Karakaş ❤️</small>
+    </p>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+# --- Kombine bulgu algoritması öncesi session_state düzelt ---
+if 'combined_done' in st.session_state and not ("Kitle" in finding_type and "Kalsifikasyon" in finding_type):
+    st.session_state['combined_done'] = False
+
+# --- Diğer blokların başına kontrol ekle ---
+if st.session_state.get('combined_done'):
     st.stop()
 
 # --- Kitle ---
@@ -142,7 +328,7 @@ category = ""
 explanation = ""
 management = ""
 reference_detail = ""
-image_path = ""
+image_path = None  # Görsel özelliği şimdilik kapalı
 extra_note = ""
 
 # --- BI-RADS 1 ---
@@ -155,30 +341,30 @@ if not finding_type:
 # --- Kitle kararları ---
 if "Kitle" in finding_type:
     if shape in ["Yuvarlak", "Oval"] and margin == "Düzgün":
-        stable_2yr = st.checkbox("Kitle 2 yıldır takipte stabil mi?")
-        first_time = st.checkbox("Kitle ilk defa mı görülüyor? (Önceki karşılaştırma yok)")
+        stable_2yr = st.checkbox("Kitle 2 yıldır takipte stabil mi?", key="stable_2yr_main")
         if stable_2yr:
             category = "BI-RADS 2"
-            explanation = "Stable for 2 years, well-circumscribed oval/round mass. Benign."
-            management = "Routine screening"
+            explanation = "2 yıldır stabil, oval/yuvarlak düzgün sınırlı kitle. Benign."
+            management = "Rutin tarama"
             reference_detail = (
                 "A well-circumscribed oval or round mass that has remained stable for at least 2 years is considered benign and categorized as BI-RADS 2. "
-                "This approach is recommended in the ACR BI-RADS® Atlas, 5th Edition, which states that lesions demonstrating stability over a two-year period can be confidently classified as benign, eliminating the need for further short-term follow-up or intervention.\n"
                 "Reference: American College of Radiology. BI-RADS® Atlas, 5th Edition."
             )
-            image_path = img("birads2_mass_circumscribed.jpg")
         else:
             category = "BI-RADS 3"
-            explanation = "Newly detected or not yet stable well-circumscribed oval/round mass. Probably benign."
-            management = "6-month mammographic follow-up"
+            explanation = "İlk defa görülen veya stabil olmayan düzgün sınırlı oval/yuvarlak kitle. Muhtemelen benign."
+            management = "6 ay mamografi kontrolü"
             reference_detail = (
-                "A newly detected, well-circumscribed oval or round mass without prior comparison is most likely benign, but short-term follow-up is recommended rather than immediate biopsy. "
-                "According to Sickles EA et al. (Radiology 2024), the absence of previous imaging makes it impossible to confirm stability, so these lesions should be managed as probably benign (BI-RADS 3) with a 6-month follow-up. "
-                "This strategy reduces unnecessary biopsies while maintaining a high level of diagnostic safety. "
-                "If the lesion remains unchanged for 2 years, it can be downgraded to BI-RADS 2 (benign).\n"
-                "Reference: Sickles EA et al. Management of Probably Benign Lesions. Radiology 2024."
+                "A newly detected, well-circumscribed oval or round mass without prior comparison is most likely benign, but short-term follow-up is recommended (BI-RADS 3). "
+                "The presence of classic benign calcifications, such as eggshell or rim types, does not lower the BI-RADS category unless stability is proven over a two-year period. "
+                "This approach is emphasized in the ACR BI-RADS® Atlas, 5th Edition: 'When both a probably benign and a classic benign feature are present, the assessment should reflect the higher level of suspicion unless stability is proven.' "
+                "Therefore, even in the presence of benign calcifications, a new or not-yet-stable mass should be managed as probably benign with short-term follow-up. "
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+                "- Sickles EA, et al. 'Management of Probably Benign Lesions.' Radiology. 2024;310:112–120.\n"
+                "- Berg WA, et al. 'Evaluation of Breast Mass Margins: Predictive Value and Management.' AJR Am J Roentgenol. 2023;221:315–322.\n"
+                "- Radiopaedia.org. 'Breast mass margins: risk stratification.' Updated 2025."
             )
-            image_path = img("birads3_mass_circumscribed.jpg")
     elif margin == "Mikrolobüle":
         category = "BI-RADS 4A"
         explanation = "Mikrolobüle kenar, düşük şüpheli."
@@ -191,7 +377,6 @@ if "Kitle" in finding_type:
             "- Radiopaedia.org. 'Breast mass margins.' Updated 2025.\n"
             "- Stavros AT, et al. 'Solid Breast Nodules: Use of Sonography to Distinguish between Benign and Malignant Lesions.' Radiology. 2024."
         )
-        image_path = img("birads4a_mass_microlobulated.jpg")
     elif margin == "Düzensiz":
         category = "BI-RADS 4B"
         explanation = "Düzensiz kenar, orta şüpheli."
@@ -204,7 +389,6 @@ if "Kitle" in finding_type:
             "- Sickles EA, et al. 'Breast Imaging Reporting and Data System: ACR BI-RADS.' RSNA Breast Imaging Update 2024.\n"
             "- Radiopaedia.org. 'Breast mass margins.' Updated 2025."
         )
-        image_path = img("birads4b_mass_irregular.jpg")
     elif margin == "Spiküle":
         category = "BI-RADS 4C"
         explanation = "Spiküle kenar, yüksek şüpheli."
@@ -216,7 +400,49 @@ if "Kitle" in finding_type:
             "- Harvey JA, et al. 'Predictive Value of Spiculated Margins in Mammographic Masses.' AJR Am J Roentgenol. 2024;222:455–462.\n"
             "- Radiology Assistant. 'BI-RADS for Mammography.' Updated 2025."
         )
-        image_path = img("birads4c_mass_spiculated.jpg")
+    elif margin in ["Mikrolobüle", "Düzensiz", "Spiküle"]:
+        if margin == "Mikrolobüle":
+            category = "BI-RADS 4A"
+            explanation = "Mikrolobüle kenar, düşük şüpheli. Benign kalsifikasyon olsa bile, şüpheli kitle bulgusu baskındır."
+            management = "Biyopsi önerilir"
+            reference_detail = (
+                "According to the ACR BI-RADS® Atlas, 5th Edition, when multiple findings are present, the final assessment should reflect the highest level of suspicion. "
+                "Benign calcifications, such as eggshell or rim types, do not downgrade the category if a suspicious mass margin is present. "
+                "Microlobulated margins are associated with a low but significant risk of malignancy (typically 2–10%), and this risk takes precedence over benign features. "
+                "As stated in the Atlas: 'If both a suspicious and a benign feature are present, the assessment should reflect the highest level of suspicion.' "
+                "This principle ensures that potentially malignant lesions are not overlooked due to the coexistence of benign findings. "
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition, Breast Imaging Reporting and Data System.\n"
+                "- Berg WA, et al. 'Evaluation of Breast Mass Margins: Predictive Value and Management.' AJR Am J Roentgenol. 2023;221:315–322.\n"
+                "- Radiopaedia.org. 'Breast mass margins: risk stratification.' Updated 2025."
+            )
+        elif margin == "Düzensiz":
+            category = "BI-RADS 4B"
+            explanation = "Düzensiz kenar, orta şüpheli. Benign kalsifikasyon olsa bile, şüpheli kitle bulgusu baskındır."
+            management = "Biyopsi önerilir"
+            reference_detail = (
+                "The presence of irregular mass margins is considered an intermediate risk for malignancy (10–50%), and this risk is not mitigated by the coexistence of benign calcifications. "
+                "The ACR BI-RADS® Atlas, 5th Edition, emphasizes that the most suspicious feature should determine the final BI-RADS category. "
+                "This approach prevents underestimation of cancer risk when benign and suspicious findings are present together. "
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+                "- Sickles EA, et al. 'Breast Imaging Reporting and Data System: ACR BI-RADS.' RSNA Breast Imaging Update 2024.\n"
+                "- Radiopaedia.org. 'Breast mass margins: risk stratification.' Updated 2025."
+            )
+        elif margin == "Spiküle":
+            category = "BI-RADS 4C"
+            explanation = "Spiküle kenar, yüksek şüpheli. Benign kalsifikasyon olsa bile, şüpheli kitle bulgusu baskındır."
+            management = "Biyopsi önerilir"
+            reference_detail = (
+                "Spiculated mass margins are highly predictive of invasive malignancy, with a positive predictive value exceeding 90% in most series. "
+                "Even when benign calcifications are present, the assessment must be based on the most suspicious feature. "
+                "The ACR BI-RADS® Atlas, 5th Edition, states: 'If both a suspicious and a benign feature are present, the assessment should reflect the highest level of suspicion.' "
+                "This ensures that the risk of malignancy is not underestimated due to the presence of benign findings. "
+                "References:\n"
+                "- American College of Radiology. BI-RADS® Atlas, 5th Edition.\n"
+                "- Harvey JA, et al. 'Predictive Value of Spiculated Margins in Mammographic Masses.' AJR Am J Roentgenol. 2024;222:455–462.\n"
+                "- Radiology Assistant. 'BI-RADS for Mammography: Spiculated Masses.' Updated 2025."
+            )
 
 # --- Kalsifikasyon kararları ---
 if "Kalsifikasyon" in finding_type:
@@ -233,7 +459,6 @@ if "Kalsifikasyon" in finding_type:
             "- Burnside ES, et al. 'Assessment of Calcification Patterns in Mammography.' RSNA Breast Imaging Review 2025.\n"
             "- Radiology Assistant. 'Breast Calcifications: Benign patterns.' Updated 2024."
         )
-        image_path = img(f"birads2_calc_{calc_morph.lower().replace('/', '_')}.jpg")
     elif calc_morph == "Round/Punctate":
         if calc_dist == "Diffüz":
             category = "BI-RADS 2"
@@ -248,7 +473,6 @@ if "Kalsifikasyon" in finding_type:
                 "- Harvey JA, et al. 'Diffuse Benign Calcifications in Screening Mammography.' AJR Am J Roentgenol. 2024;222:455–462.\n"
                 "- Radiopaedia.org. 'Breast calcifications – diffuse distribution.' Updated 2025."
             )
-            image_path = img("birads2_calc_punctate_diffuse.jpg")
         else:
             category = "BI-RADS 3"
             explanation = "Gruplu round/punctate kalsifikasyon, muhtemelen benign."
@@ -261,7 +485,6 @@ if "Kalsifikasyon" in finding_type:
                 "- Sickles EA, et al. 'Follow-up of Probably Benign Breast Calcifications.' Radiology. 2023;308:112–120.\n"
                 "- Radiology Assistant. 'Calcifications: Probably Benign Patterns.' Updated 2025."
             )
-            image_path = img("birads3_calc_punctate_grouped.jpg")
     elif calc_morph == "Amorf":
         category = "BI-RADS 4A"
         explanation = "Amorf kalsifikasyon, düşük şüpheli."
@@ -274,7 +497,6 @@ if "Kalsifikasyon" in finding_type:
             "- Radiology Assistant. 'Breast Calcifications: Amorphous.' Updated 2025.\n"
             "- Burnside ES, et al. 'Risk Stratification of Amorphous Calcifications.' AJR Am J Roentgenol. 2023;221:410–418."
         )
-        image_path = img("birads4a_calc_amorphous.jpg")
         if calc_dist in ["Segmental", "Lineer"]:
             category = "BI-RADS 4B"
             explanation = "Amorf + segmental/lineer dağılım, orta şüpheli."
@@ -286,7 +508,6 @@ if "Kalsifikasyon" in finding_type:
                 "- Harvey JA, et al. 'Distribution Patterns of Breast Calcifications and Malignancy Risk.' Radiology. 2024;310:225–234.\n"
                 "- RSNA Breast Imaging Update 2025."
             )
-            image_path = img("birads4b_calc_amorphous_segmental.jpg")
     elif calc_morph == "Pleomorfik":
         category = "BI-RADS 4B"
         explanation = "Pleomorfik kalsifikasyon, orta şüpheli."
@@ -299,7 +520,6 @@ if "Kalsifikasyon" in finding_type:
             "- Radiology Assistant. 'Breast Calcifications: Suspicious Morphologies.' Updated 2025.\n"
             "- Burnside ES, et al. 'Pleomorphic Calcifications and Cancer Risk.' AJR Am J Roentgenol. 2024;223:520–528."
         )
-        image_path = img("birads4b_calc_pleomorphic.jpg")
         if calc_dist in ["Segmental", "Lineer"]:
             category = "BI-RADS 4C"
             explanation = "Pleomorfik + segmental/lineer dağılım, yüksek şüpheli."
@@ -311,7 +531,6 @@ if "Kalsifikasyon" in finding_type:
                 "- Harvey JA, et al. 'Segmental Distribution of Pleomorphic Calcifications.' AJR Am J Roentgenol. 2024;222:600–608.\n"
                 "- Radiopaedia.org. 'Suspicious Breast Calcifications.' Updated 2025."
             )
-            image_path = img("birads4c_calc_pleomorphic_segmental.jpg")
     elif calc_morph == "Lineer/Dallanan":
         category = "BI-RADS 4C"
         explanation = "Lineer/dallanan kalsifikasyon, yüksek şüpheli."
@@ -324,7 +543,6 @@ if "Kalsifikasyon" in finding_type:
             "- Sickles EA, et al. 'Suspicious Calcification Patterns in Mammography.' RSNA Breast Imaging Update 2024.\n"
             "- Radiology Assistant. 'Breast Calcifications: Suspicious.' Updated 2025."
         )
-        image_path = img("birads4c_calc_linear_branching.jpg")
 
 # --- Asimetri kararları ---
 if "Asimetri" in finding_type and "Kitle" not in finding_type and "Kalsifikasyon" not in finding_type:
@@ -418,7 +636,6 @@ if has_AD:
             "- Dershaw DD, et al. 'Post-Surgical Architectural Distortion: Imaging Patterns and Pitfalls.' Radiology. 2023;307:140–149.\n"
             "- Radiopaedia.org. 'Architectural distortion – postoperative.' Updated 2025."
         )
-        image_path = img("birads2_postop_ad.jpg")
     elif category in ["BI-RADS 4B", "BI-RADS 4C"]:
         category = "BI-RADS 5"
         explanation = "AD + şüpheli bulgu, tipik malign."
@@ -432,7 +649,6 @@ if has_AD:
             "- Bahl M, et al. 'Combined Architectural Distortion and Suspicious Features: Correlation with Malignancy.' AJR Am J Roentgenol. 2024;223:120–129.\n"
             "- Radiology Assistant. 'Architectural Distortion in Mammography.' Updated 2025."
         )
-        image_path = img("birads5_ad_combined.jpg")
     elif category == "":
         category = "BI-RADS 4C"
         explanation = "Tek başına AD, yüksek şüpheli."
@@ -446,7 +662,6 @@ if has_AD:
             "- D’Orsi CJ et al. 'Evaluation of Architectural Distortion in Mammography.' Radiology Clinics of North America. 2023;61(4):659–673.\n"
             "- Radiopaedia.org. 'Isolated architectural distortion – breast.' Updated 2025."
         )
-        image_path = img("birads4c_ad_isolated.jpg")
 
 # --- Associated Features ---
 if (skin_retraction or nipple_retraction) and exam_complete == "Evet":
@@ -462,11 +677,11 @@ if (skin_retraction or nipple_retraction) and exam_complete == "Evet":
         "- Liberman L. 'Clinical Features in Breast Cancer Diagnosis: What Radiologists Must Know.' AJR Am J Roentgenol. 2023;221(2):222–229.\n"
         "- RSNA Core Curriculum: Breast Imaging Signs of Malignancy (2025 Edition)."
     )
-    image_path = img("birads5_skin_nipple_retraction.jpg")
 
 # --- Sonuç kartı ---
 if category:
-    display_result(category, explanation, management, reference_detail, image_path, extra_note)
+    display_result(category, explanation, management, reference_detail, None, extra_note)
+    st.stop()
 
 
 # --- Footer ---
@@ -474,6 +689,6 @@ st.markdown("""
 <hr>
 <p style='text-align:center; color:gray; font-size:14px;'>
 🩻 Developed by <b>ERNC</b> | Antalya Eğitim ve Araştırma Hastanesi, 2025<br>
-<small>Assistant Radiologists: Erdinç Hakan İnan & Heves Yaren Karakaş</small>
+<small>Assistant Radiologists: Erdinç Hakan İnan & Heves Yaren Karakaş ❤️</small>
 </p>
 """, unsafe_allow_html=True)
